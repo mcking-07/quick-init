@@ -81,14 +81,19 @@ initialize_git_repository() {
 
 load_nvm() {
   if [[ -s $NVM_DIR/nvm.sh ]]; then
-    . $NVM_DIR/nvm.sh
+    source $NVM_DIR/nvm.sh
   else
     exit_with "nvm is not installed. please install nvm and try again."
   fi
 }
 
-set_node_version() {
+configure_node_version() {
   local node_version="$1"
+
+  load_nvm
+
+  nvm install "$node_version" &>/dev/null || exit_with "failed to install node version $node_version"
+  nvm use "$node_version" &>/dev/null || exit_with "failed to use node version $node_version"
 
   echo "$node_version" >.nvmrc
 
@@ -97,22 +102,14 @@ set_node_version() {
   fi
 }
 
-use_node_version() {
-  load_nvm
-  local node_version="$1"
-
-  nvm install "$node_version" &>/dev/null || exit_with "failed to install node version $node_version"
-  nvm use "$node_version" &>/dev/null || exit_with "failed to use node version $node_version"
-}
-
 fetch_package_details() {
   echo -e "\nfollow the prompts to enter the package details. press enter to use defaults."
 
   read -p "package name: " package_name
   package_name="${package_name:-$repository_name}"
 
-  read -p "entry point (e.g. index.js): " package_entry_point
-  package_entry_point="${package_entry_point:-index.js}"
+  read -p "entry point (e.g. src/index.js): " package_entry_point
+  package_entry_point="${package_entry_point:-src/index.js}"
 
   read -p "description: " package_description
   read -p "author: " package_author
@@ -141,28 +138,73 @@ update_package_json() {
   fi
 }
 
-setup_node_project() {
-  read -p "enter node version (eg: 18): " node_version
+add_code_to_index_file() {
+  local file="$1"
 
-  if is_empty "$node_version"; then
-    log "error" "node version cannot be empty."
-    setup_node_project
+  echo -e "\nconst main = () => console.log('this project was bootstrapped using template-factory 🚀.');\n\nmain();" >"$file"
+
+  if [ $? -ne 0 ]; then
+    exit_with "failed to add base code to $file"
   fi
+}
+
+configure_node_project_structure() {
+  local directories=("src")
+  local files=("src/index.js")
+
+  for directory in "${directories[@]}"; do
+    mkdir -p "$directory"
+  done
+
+  for file in "${files[@]}"; do
+    touch "$file"
+  done
+
+  add_code_to_index_file "src/index.js"
+}
+
+configure_basic_project_structure() {
+  case "$project_template" in
+  "nodejs")
+    configure_node_project_structure
+    ;;
+  "typescript")
+    # TODO: configure_typescript_project_structure
+    exit_with "typescript template is not supported yet."
+    ;;
+  "python")
+    # TODO: configure_python_project_structure
+    exit_with "python template is not supported yet."
+    ;;
+  esac
+}
+
+setup_node_project() {
+  local node_version
+
+  while true; do
+    read -p "enter node version (eg: 18): " node_version
+
+    if ! is_empty "$node_version"; then
+      break
+    fi
+
+    log "error" "node version cannot be empty."
+  done
+
+  load_nvm
 
   if [[ $node_version =~ ^[0-9]+$ ]]; then
-    load_nvm
     node_version=$(nvm version-remote --lts $node_version)
-    echo "$node_version"
   fi
 
-  use_node_version "$node_version"
-  set_node_version "$node_version"
-
+  configure_node_version "$node_version"
   fetch_package_details
 
   npm init -y &>/dev/null
   update_package_json
 
+  configure_basic_project_structure
 }
 
 setup_project() {
